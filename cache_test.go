@@ -211,6 +211,39 @@ func TestCache_Clear(t *testing.T) {
 	}
 }
 
+func TestCache_Range(t *testing.T) {
+	size := 128
+	c, err := MustBuilder[int, int](size).Build()
+	if err != nil {
+		t.Fatalf("can not create cache: %v", err)
+	}
+
+	goMap := make(map[int]int, size)
+	for i := 0; i < size; i++ {
+		c.Set(i, i)
+		goMap[i] = i
+	}
+
+	c.Range(func(key, value int) bool {
+		v, ok := goMap[key]
+		if !ok {
+			t.Fatalf("unexpected key %v", key)
+		}
+		if v != value {
+			t.Fatalf("unexpected value for key %v: %v", key, value)
+		}
+		delete(goMap, key)
+		return true
+	})
+
+	time.Sleep(10 * time.Millisecond)
+	if len(goMap) != 0 {
+		for key := range goMap {
+			t.Fatalf("failed to visit key %v", key)
+		}
+	}
+}
+
 type optimal struct {
 	capacity uint64
 	hits     map[uint64]uint64

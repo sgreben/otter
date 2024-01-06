@@ -143,6 +143,22 @@ func (c *Cache[K, V]) afterGet(got *node.Node[K, V]) {
 	}
 }
 
+// Range iterates over all items in the cache.
+//
+// Iteration stops early when the given function returns `true`.
+func (c *Cache[K, V]) Range(f func(key K, value V) bool) {
+	c.hashmap.Range(func(n *node.Node[K, V]) bool {
+		n.Lock()
+		key := n.Key()
+		value := n.Value()
+		n.Unlock()
+		if n.IsExpired() {
+			return true
+		}
+		return f(key, value)
+	})
+}
+
 // Set associates the value with the key in this cache. If the cache previously
 // contained a value associated with the key, the old value is replaced by the new value.
 func (c *Cache[K, V]) Set(key K, value V) {

@@ -130,6 +130,31 @@ func TestMap_SetThenDelete(t *testing.T) {
 	}
 }
 
+func TestMap_SetThenRange(t *testing.T) {
+	const numberOfNodes = 1000
+	m := New[string, int]()
+	goMap := make(map[string]int)
+	for i := 0; i < numberOfNodes; i++ {
+		key := strconv.Itoa(i)
+		value := i
+		m.Set(newNode[string, int](key, value))
+		goMap[key] = value
+	}
+	m.Range(func(n *node.Node[string, int]) bool {
+		if _, ok := goMap[n.Key()]; !ok {
+			t.Errorf("unexpected visited by range: %s", n.Key())
+		}
+		delete(goMap, n.Key())
+		if n.Key() != strconv.Itoa(n.Value()) {
+			t.Errorf("value was not expected for %s: %v", n.Key(), n.Value())
+		}
+		return true
+	})
+	if len(goMap) != 0 {
+		t.Errorf("not all keys visited by Range(): %v", goMap)
+	}
+}
+
 func TestMap_Size(t *testing.T) {
 	const numberOfNodes = 1000
 	m := New[string, int]()
@@ -256,6 +281,19 @@ func parallelGetter(t *testing.T, m *Map[string, int], iterations, nodes int, wg
 	wg.Done()
 }
 
+func parallelRange(t *testing.T, m *Map[string, int], iterations int, wg *sync.WaitGroup) {
+	t.Helper()
+	for i := 0; i < iterations; i++ {
+		m.Range(func(n *node.Node[string, int]) bool {
+			if strconv.Itoa(n.Value()) != n.Key() {
+				t.Errorf("value was not expected for %s: %d", n.Key(), n.Value())
+			}
+			return true
+		})
+	}
+	wg.Done()
+}
+
 func TestMap_ParallelGet(t *testing.T) {
 	const iterations = 100_000
 	const nodes = 100
@@ -280,6 +318,22 @@ func TestMap_ParallelSetsAndDeletes(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go parallelRandSetter(t, m, iterations, nodes, wg)
 		go parallelRandDeleter(t, m, iterations, nodes, wg)
+	}
+
+	wg.Wait()
+}
+
+func TestMap_ParallelSetsAndDeletesAndRange(t *testing.T) {
+	const workers = 2
+	const iterations = 100_000
+	const nodes = 100
+	m := New[string, int]()
+	wg := &sync.WaitGroup{}
+	wg.Add(3 * workers)
+	for i := 0; i < workers; i++ {
+		go parallelRandSetter(t, m, iterations, nodes, wg)
+		go parallelRandDeleter(t, m, iterations, nodes, wg)
+		go parallelRange(t, m, iterations, wg)
 	}
 
 	wg.Wait()

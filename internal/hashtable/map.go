@@ -184,6 +184,43 @@ func (m *Map[K, V]) Get(key K) (got *node.Node[K, V], ok bool) {
 	}
 }
 
+// Range iterates over all nodes in the map.
+func (m *Map[K, V]) Range(f func(*node.Node[K, V]) bool) {
+	var zeroPtr unsafe.Pointer
+	// Pre-allocate array big enough to fit entries for most hash tables.
+	nodes := make([]unsafe.Pointer, 0, 16*bucketSize)
+	t := (*table[K])(atomic.LoadPointer(&m.table))
+	for i := range t.buckets {
+		rootBucket := &t.buckets[i]
+		b := rootBucket
+		// Prevent concurrent modifications and copy all entries into
+		// the intermediate slice.
+		rootBucket.mutex.Lock()
+		for {
+			for i := 0; i < bucketSize; i++ {
+				if b.nodes[i] != nil {
+					nodes = append(nodes, b.nodes[i])
+				}
+			}
+			if b.next == nil {
+				rootBucket.mutex.Unlock()
+				break
+			}
+			b = (*paddedBucket)(b.next)
+		}
+		// Call the function for all copied entries.
+		for j := range nodes {
+			n := (*node.Node[K, V])(nodes[j])
+			if !f(n) {
+				return
+			}
+			// Remove the reference to allow the copied entries to be GCed before this method finishes.
+			nodes[j] = zeroPtr
+		}
+		nodes = nodes[:0]
+	}
+}
+
 // Set sets the *node.Node for the key.
 //
 // Returns the evicted node or nil if the node was inserted.
